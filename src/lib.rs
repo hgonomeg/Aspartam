@@ -296,9 +296,9 @@ mod tests {
 
         get_runtime().block_on(async {
             let _prim = Primary::create(move |a| {
-                let this = a.weak_address();
+                let this = a.address();
                 Primary {
-                    _sec: Secondary { _prim: this }.start(),
+                    _sec: Secondary { _prim: this.downgrade() }.start(),
                 }
             });
         })
