@@ -12,6 +12,27 @@ pub struct ActorContext<T: Actor> {
     msg_queue: MessageQueue<T>,
 }
 unsafe impl<T: Actor> Send for ActorContext<T> {}
+
+impl<T: Actor> ActorContext<T> {
+    pub fn address(&self) -> Addr<T> {
+        self.address.upgrade().unwrap()
+    }
+    fn empty(msg_queue: MessageQueue<T>) -> Self {
+        Self {
+            address: WeakAddr::<T>::empty(),
+            msg_queue,
+        }
+    }
+    fn new(msg_queue: MessageQueue<T>, weakaddr:  WeakAddr<T>) -> Self {
+        Self {
+            address: weakaddr,
+            msg_queue,
+        }
+    }
+    fn set_weakaddr(&mut self, source: WeakAddr<T>) {
+        self.address = source;
+    }
+}
 #[async_trait]
 trait EnvelopeProxy<A: Actor> {
     async fn handle(&mut self, act: &mut A, ctx: &mut ActorContext<A>);
@@ -77,21 +98,6 @@ impl<T: Actor> MessageQueue<T> {
     }
 }
 
-impl<T: Actor> ActorContext<T> {
-    pub fn address(&self) -> Addr<T> {
-        self.address.upgrade().unwrap()
-    }
-    fn empty(msg_queue: MessageQueue<T>) -> Self {
-        Self {
-            address: WeakAddr::<T>::empty(),
-            msg_queue,
-        }
-    }
-    fn set_weakaddr(&mut self, source: WeakAddr<T>) {
-        self.address = source;
-    }
-}
-
 pub struct Addr<T: Actor> {
     _inner: Arc<Mutex<T>>,
     ctx: Arc<Mutex<ActorContext<T>>>,
@@ -130,7 +136,7 @@ impl<T: Actor> WeakAddr<T> {
     fn empty() -> Self {
         Self {
             _inner: Weak::new(),
-            ctx: Weak::new(),
+            ctx: Weak::new()
         }
     }
 }
@@ -152,6 +158,12 @@ impl<T: Actor> Addr<T> {
             ctx: Arc::<Mutex<ActorContext<T>>>::downgrade(&self.ctx),
         }
     }
+    // fn new_cyclic<F: FnOnce(&WeakAddr<T>) -> Self>(f: F) -> Self {
+    //     let initial = WeakAddr::<T>::empty();
+    //     let content = f(&initial);
+        
+
+    // }
 }
 
 #[async_trait]
@@ -319,4 +331,31 @@ mod tests {
             rx.await.unwrap();
         });
     }
+    // #[test]
+    // fn actor_create() {
+
+    //     struct Secondary {
+    //         prim: WeakAddr<Primary>
+    //     }
+    //     impl Actor for Secondary{ 
+            
+    //     }
+    //     struct Primary {
+    //         sec: Addr<Secondary>
+    //     }
+    //     impl Actor for Primary {
+
+    //     }
+
+    //     get_runtime().block_on(async {
+    //         let prim = Primary::create(move |a| {
+    //             let this = a.address();
+    //             Primary {
+    //                 sec: Secondary {
+    //                     prim: this.downgrade()
+    //                 }.start()
+    //             }
+    //         }).await;
+    //     })
+    // }
 }
