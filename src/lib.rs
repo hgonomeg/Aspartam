@@ -98,13 +98,11 @@ impl<T: Actor> MessageQueue<T> {
 }
 
 pub struct Addr<T: Actor> {
-    _inner: Arc<Mutex<T>>,
-    msg_queue: MessageQueue<T>,
+    msg_queue: Arc<MessageQueue<T>>,
 }
 impl<T: Actor> Clone for Addr<T> {
     fn clone(&self) -> Self {
         Self {
-            _inner: Arc::clone(&self._inner),
             msg_queue: self.msg_queue.clone(),
         }
     }
@@ -122,21 +120,18 @@ impl<T: Actor> Addr<T> {
     }
     pub fn downgrade(&self) -> WeakAddr<T> {
         WeakAddr::<T> {
-            _inner: Arc::<Mutex<T>>::downgrade(&self._inner),
-            msg_queue: self.msg_queue.clone(),
+            msg_queue: Arc::downgrade(&self.msg_queue),
         }
     }
 }
 
 pub struct WeakAddr<T: Actor> {
-    _inner: Weak<Mutex<T>>,
-    msg_queue: MessageQueue<T>,
+    msg_queue: Weak<MessageQueue<T>>,
 }
 impl<T: Actor> Clone for WeakAddr<T> {
     fn clone(&self) -> Self {
         Self {
-            _inner: Weak::clone(&self._inner),
-            msg_queue: self.msg_queue.clone(),
+            msg_queue: Weak::clone(&self.msg_queue),
         }
     }
 }
@@ -145,8 +140,7 @@ unsafe impl<T: Actor> Send for WeakAddr<T> {}
 impl<T: Actor> WeakAddr<T> {
     pub fn upgrade(&self) -> Option<Addr<T>> {
         Some(Addr::<T> {
-            _inner: self._inner.upgrade()?,
-            msg_queue: self.msg_queue.clone(),
+            msg_queue: self.msg_queue.upgrade()?,
         })
     }
 }
@@ -156,52 +150,33 @@ pub trait Actor: 'static + Sized + Send {
     fn start(self) -> Addr<Self> {
         let (msg_queue, msg_rx) = MessageQueue::new();
         let ret = Addr::<Self> {
-            _inner: Arc::from(Mutex::from(self)),
-            msg_queue,
+            msg_queue: Arc::from(msg_queue)
         };
         let weakaddr = ret.downgrade();
-        tokio::spawn(actor_runner_loop(weakaddr, msg_rx));
+        tokio::spawn(actor_runner_loop(self,ActorContext::new(weakaddr), msg_rx));
         ret
     }
     fn create<F: Fn(&mut ActorContext<Self>) -> Self + Send>(f: F) -> Addr<Self> {
         let (msg_queue, msg_rx) = MessageQueue::new();
         let ret = Addr::<Self> {
-            _inner: Arc::new_cyclic(|x| {
-                let weakaddr = WeakAddr {
-                    _inner: x.clone(),
-                    msg_queue: msg_queue.clone(),
-                };
-                let mut ctx = ActorContext::new(weakaddr);
-                Mutex::from(f(&mut ctx))
-            }),
-            msg_queue,
+            msg_queue: Arc::from(msg_queue)
         };
-        tokio::spawn(actor_runner_loop(ret.downgrade(), msg_rx));
+        let weakaddr = ret.downgrade();
+        let mut ctx = ActorContext::new(weakaddr);
+        tokio::spawn(actor_runner_loop(f(&mut ctx),ctx, msg_rx));
         ret
     }
     async fn started(&mut self, _ctx: &mut ActorContext<Self>) {}
 }
 
 async fn actor_runner_loop<A: Actor>(
-    weakaddr: WeakAddr<A>,
+    mut act: A,
+    mut ctx: ActorContext<A>,
     mut msg_rx: UnboundedReceiver<QueuePayload<A>>,
 ) {
-    {
-        let starting_addr = weakaddr.upgrade().unwrap();
-        let mut act = starting_addr._inner.lock().await;
-        let mut ctx = ActorContext {
-            address: weakaddr.clone(),
-        };
-        act.started(&mut ctx).await;
-    }
+    act.started(&mut ctx).await;
     while let Some(mut msg) = msg_rx.recv().await {
-        let owned = weakaddr.upgrade().unwrap();
-        let mut act = owned._inner.lock().await;
-        let mut ctx = ActorContext {
-            address: weakaddr.clone(),
-        };
-        msg.handle(&mut *act, &mut ctx).await;
-        drop(act);
+        msg.handle(&mut act, &mut ctx).await;
     }
 }
 
