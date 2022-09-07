@@ -89,17 +89,31 @@ impl<T: Actor> ActorContext<T> {
     }
 }
 
-#[derive(Clone)]
 pub struct Addr<T: Actor> {
     _inner: Arc<Mutex<T>>,
     ctx: Arc<Mutex<ActorContext<T>>>,
 }
+impl<T: Actor> Clone for Addr<T> {
+    fn clone(&self) -> Self {
+        Self {
+            _inner: Arc::clone(&self._inner),
+            ctx: Arc::clone(&self.ctx),
+        }
+    }
+}
 unsafe impl<T: Actor> Send for Addr<T> {}
 
-#[derive(Clone)]
 pub struct WeakAddr<T: Actor> {
     _inner: Weak<Mutex<T>>,
     ctx: Weak<Mutex<ActorContext<T>>>,
+}
+impl<T: Actor> Clone for WeakAddr<T> {
+    fn clone(&self) -> Self {
+        Self {
+            _inner: Weak::clone(&self._inner),
+            ctx: Weak::clone(&self.ctx),
+        }
+    }
 }
 unsafe impl<T: Actor> Send for WeakAddr<T> {}
 
@@ -191,7 +205,11 @@ mod tests {
         #[async_trait]
         impl Handler<Ping> for Game {
             type Response = Pong;
-            async fn handle(&mut self, msg: Ping, ctx: &mut ActorContext<Self>) -> Self::Response {
+            async fn handle(
+                &mut self,
+                _msg: Ping,
+                _ctx: &mut ActorContext<Self>,
+            ) -> Self::Response {
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 Pong
             }
@@ -200,6 +218,70 @@ mod tests {
         get_runtime().block_on(async {
             let game = Game.start().await;
             let _pong = game.send(Ping).await;
+        });
+    }
+
+    #[test]
+    fn data_sanity() {
+        use futures_util::stream::StreamExt;
+        struct Incrementor {
+            request_count: usize,
+        }
+        impl Actor for Incrementor {}
+        #[async_trait]
+        impl Handler<u32> for Incrementor {
+            type Response = u32;
+            async fn handle(&mut self, msg: u32, _ctx: &mut ActorContext<Self>) -> Self::Response {
+                self.request_count += 1;
+                msg + 1
+            }
+        }
+        struct GetRequestCount;
+        #[async_trait]
+        impl Handler<GetRequestCount> for Incrementor {
+            type Response = usize;
+            async fn handle(
+                &mut self,
+                _msg: GetRequestCount,
+                _ctx: &mut ActorContext<Self>,
+            ) -> Self::Response {
+                self.request_count
+            }
+        }
+
+        get_runtime().block_on(async {
+            let incrementor = Incrementor { request_count: 0 }.start().await;
+            assert_eq!(incrementor.send(GetRequestCount).await, 0);
+            assert_eq!(incrementor.send(2).await, 3);
+            assert_eq!(incrementor.send(GetRequestCount).await, 1);
+            assert_eq!(incrementor.send(7).await, 8);
+            assert_eq!(incrementor.send(9).await, 10);
+            assert_eq!(incrementor.send(GetRequestCount).await, 3);
+            let mut i = 0;
+            while i < 500 {
+                let r = incrementor.send(i).await;
+                i += 1;
+                assert_eq!(r, i);
+            }
+            assert_eq!(incrementor.send(GetRequestCount).await, 503);
+        });
+    }
+    #[test]
+    fn memory_leaks() {
+        struct DropMe {
+            tx: Option<oneshot::Sender<()>>,
+        };
+        impl Actor for DropMe {}
+        impl Drop for DropMe {
+            fn drop(&mut self) {
+                self.tx.take().unwrap().send(()).unwrap();
+            }
+        }
+        get_runtime().block_on(async {
+            let (tx, rx) = oneshot::channel();
+            let d = DropMe { tx: Some(tx) }.start().await;
+            drop(d);
+            rx.await.unwrap();
         });
     }
 }
