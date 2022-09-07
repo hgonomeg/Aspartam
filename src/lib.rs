@@ -176,10 +176,30 @@ pub trait Handler<T: Send>: Actor {
 mod tests {
     use super::*;
 
-    
+    fn get_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Runtime::new().unwrap()
+    }
 
     #[test]
-    fn basic() {
+    fn basic_messages() {
+        struct Ping;
+        struct Pong;
 
+        struct Game;
+
+        impl Actor for Game {}
+        #[async_trait]
+        impl Handler<Ping> for Game {
+            type Response = Pong;
+            async fn handle(&mut self, msg: Ping, ctx: &mut ActorContext<Self>) -> Self::Response {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                Pong
+            }
+        }
+
+        get_runtime().block_on(async {
+            let game = Game.start().await;
+            let _pong = game.send(Ping).await;
+        });
     }
 }
