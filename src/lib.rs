@@ -167,6 +167,7 @@ pub trait Actor: 'static + Sized + Send {
         ret
     }
     async fn started(&mut self, _ctx: &mut ActorContext<Self>) {}
+    async fn stopped(&mut self, _ctx: &mut ActorContext<Self>) {}
 }
 
 async fn actor_runner_loop<A: Actor>(
@@ -178,6 +179,7 @@ async fn actor_runner_loop<A: Actor>(
     while let Some(mut msg) = msg_rx.recv().await {
         msg.handle(&mut act, &mut ctx).await;
     }
+    act.stopped(&mut ctx).await;
 }
 
 #[async_trait]
