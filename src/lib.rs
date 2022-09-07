@@ -1,37 +1,59 @@
 use async_trait::async_trait;
-use std::{sync::{Arc, Weak}, marker::PhantomData};
-use tokio::{sync::Mutex,sync::mpsc};
+use std::{sync::{Arc, Weak}};
+use tokio::{sync::Mutex,sync::{mpsc,oneshot}};
 use futures_util::{stream,sink};
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
     msg_queue: MessageQueue<T>
 }
-
+#[async_trait(?Send)]
 trait EnvelopeProxy<A: Actor>{
-
+    async fn handle(&mut self, act: &mut A, ctx: &mut ActorContext<A>);
 }
-struct Envelope<T>(Box<dyn EnvelopeProxy<T> + Send>);
-
-
-impl<T> Envelope<T> {
-    // fn new() -> Self {
-        
-    // }
+struct Envelope<M: Send, R: Send> {
+    item: Option<M>,
+    tx: Option<oneshot::Sender<R>>
 }
 
+#[async_trait(?Send)]
+impl<A,M> EnvelopeProxy<A> for Envelope<M,<A as Handler<M>>::Response> where 
+    A: Actor,
+    A: Handler<M>,
+    M: Send
+{
+    async fn handle(&mut self, act: &mut A, ctx: &mut ActorContext<A>) {
+        let ret = act.handle(self.item.take().unwrap(),ctx).await;
+        let tx = self.tx.take().unwrap();
+        if let Err(_e) = tx.send(ret) {
+            panic!("Failed to send response: oneshot::Receiver must be dead.");
+        }
+    }
+}
+
+impl<M: Send, R: Send> Envelope<M,R> {
+    pub fn new(item: M, tx: oneshot::Sender<R>) -> Self {
+        Self {
+            item : Some(item),
+            tx : Some(tx)
+        }
+    }
+}
+
+type QueuePayload<T> = Box<dyn EnvelopeProxy<T> + Send>;
 struct MessageQueue<T: Actor> {
-    tx: mpsc::UnboundedSender<Envelope<T>>
+    tx: mpsc::UnboundedSender<QueuePayload<T>>
 }
 
 impl<T: Actor> MessageQueue<T> {
-    fn new() -> (Self,mpsc::UnboundedReceiver<Envelope<T>>) {
+    fn new() -> (Self,mpsc::UnboundedReceiver<QueuePayload<T>>) {
         let (tx,rx) = mpsc::unbounded_channel();
-        (Self {
-            tx
-        },rx)
+        (Self {tx},rx)
     }
-    async fn send<M>(&self, msg: M) where T: Handler<M>, M: Send {
-
+    fn send<M>(&self, msg: M) -> oneshot::Receiver<<T as Handler<M>>::Response> where T: Handler<M>, M: 'static + Send {
+        let (tx,rx) = oneshot::channel();
+        let envelope = Envelope::new(msg,tx);
+        self.tx.send(Box::from(envelope));
+        rx
     }
 }
 
@@ -80,9 +102,11 @@ impl<T: Actor> WeakAddr<T> {
 }
 
 impl<T: Actor> Addr<T> {
-    pub async fn send<M>(&self, msg: M) where M: Send, T: Handler<M> {
+    pub async fn send<M>(&self, msg: M) -> <T as Handler<M>>::Response where M: 'static + Send, T: Handler<M> {
        let ctx_lock = self.ctx.lock().await; 
-       ctx_lock.msg_queue.send(msg).await;
+       let resp = ctx_lock.msg_queue.send(msg);
+       drop(ctx_lock);
+       resp.await.unwrap()
     }
     pub fn downgrade(&self) -> WeakAddr<T> {
         WeakAddr::<T> {
@@ -117,7 +141,8 @@ pub trait Actor: 'static + Sized {
 
 #[async_trait]
 pub trait Handler<T: Send>: Actor {
-    async fn handle(&mut self, msg: T, ctx: &mut ActorContext<Self>);
+    type Response: Send + 'static;
+    async fn handle(&mut self, msg: T, ctx: &mut ActorContext<Self>) -> Self::Response;
 }
 
 #[cfg(test)]
