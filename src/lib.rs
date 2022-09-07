@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use std::{sync::{Arc, Weak}};
 use tokio::{sync::Mutex,sync::{mpsc,oneshot}};
-use futures_util::{stream,sink};
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
     msg_queue: MessageQueue<T>
 }
-#[async_trait(?Send)]
+unsafe impl<T: Actor> Send for ActorContext<T>{}
+#[async_trait]
 trait EnvelopeProxy<A: Actor>{
     async fn handle(&mut self, act: &mut A, ctx: &mut ActorContext<A>);
 }
@@ -15,7 +15,7 @@ struct Envelope<M: Send, R: Send> {
     tx: Option<oneshot::Sender<R>>
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<A,M> EnvelopeProxy<A> for Envelope<M,<A as Handler<M>>::Response> where 
     A: Actor,
     A: Handler<M>,
@@ -30,12 +30,15 @@ impl<A,M> EnvelopeProxy<A> for Envelope<M,<A as Handler<M>>::Response> where
     }
 }
 
-impl<M: Send, R: Send> Envelope<M,R> {
+impl<M: 'static + Send, R: 'static + Send> Envelope<M,R> {
     pub fn new(item: M, tx: oneshot::Sender<R>) -> Self {
         Self {
             item : Some(item),
             tx : Some(tx)
         }
+    }
+    pub fn pack<A>(self) -> QueuePayload<A> where A: Actor, Self: EnvelopeProxy<A> {
+        Box::from(self)
     }
 }
 
@@ -51,8 +54,10 @@ impl<T: Actor> MessageQueue<T> {
     }
     fn send<M>(&self, msg: M) -> oneshot::Receiver<<T as Handler<M>>::Response> where T: Handler<M>, M: 'static + Send {
         let (tx,rx) = oneshot::channel();
-        let envelope = Envelope::new(msg,tx);
-        self.tx.send(Box::from(envelope));
+        let envelope = Envelope::new(msg,tx).pack();
+        if let Err(_e) = self.tx.send(envelope) {
+            panic!("Failed to enqueue message for actor. Receiver must be dead.");
+        }
         rx
     }
 }
@@ -77,12 +82,14 @@ pub struct Addr<T: Actor> {
     _inner: Arc<Mutex<T>>,
     ctx: Arc<Mutex<ActorContext<T>>>
 }
+unsafe impl<T: Actor> Send for Addr<T>{}
 
 #[derive(Clone)]
 pub struct WeakAddr<T: Actor> {
     _inner: Weak<Mutex<T>>,
     ctx: Weak<Mutex<ActorContext<T>>>
 }
+unsafe impl<T: Actor> Send for WeakAddr<T>{}
 
 impl<T: Actor> WeakAddr<T> {
     pub fn upgrade(&self) -> Option<Addr<T>> {
@@ -117,16 +124,11 @@ impl<T: Actor> Addr<T> {
 }
 
 #[async_trait]
-pub trait Actor: 'static + Sized {
+pub trait Actor: 'static + Sized + Send {
     async fn start(self) -> Addr<Self> {
         let (msg_queue,mut msg_rx) = MessageQueue::new();
         
-        tokio::spawn(async move { 
-            while let Some(msg) = msg_rx.recv().await {
-
-            }
-        });
-
+        
         let ret = Addr::<Self> { 
             _inner: Arc::from(Mutex::from(self)),
             ctx: Arc::from(Mutex::from(ActorContext::empty(msg_queue)))
@@ -134,9 +136,21 @@ pub trait Actor: 'static + Sized {
         let mut ctx_lock = ret.ctx.lock().await;
         ctx_lock.set_weakaddr(ret.downgrade());
         drop(ctx_lock);
+        let weakaddr = ret.downgrade();
+
+        tokio::spawn(async move { 
+            while let Some(mut msg) = msg_rx.recv().await {
+                let owned = weakaddr.upgrade().unwrap();
+                let mut act = owned._inner.lock().await;
+                let mut ctx = owned.ctx.lock().await;
+                msg.handle(&mut *act, &mut *ctx).await;
+                drop(act);
+                drop(ctx);
+            }
+        });
         ret
     }
-    async fn started();
+    async fn started(&self, _ctx: &mut ActorContext<Self>) { }
 }
 
 #[async_trait]
