@@ -2,7 +2,10 @@ use async_trait::async_trait;
 use std::sync::{Arc, Weak};
 use tokio::{
     sync::Mutex,
-    sync::{mpsc, oneshot},
+    sync::{
+        mpsc::{self, UnboundedReceiver},
+        oneshot,
+    },
 };
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
@@ -154,7 +157,7 @@ impl<T: Actor> Addr<T> {
 #[async_trait]
 pub trait Actor: 'static + Sized + Send {
     async fn start(self) -> Addr<Self> {
-        let (msg_queue, mut msg_rx) = MessageQueue::new();
+        let (msg_queue, msg_rx) = MessageQueue::new();
 
         let ret = Addr::<Self> {
             _inner: Arc::from(Mutex::from(self)),
@@ -165,25 +168,52 @@ pub trait Actor: 'static + Sized + Send {
         drop(ctx_lock);
         let weakaddr = ret.downgrade();
 
-        tokio::spawn(async move {
-            {
-                let starting_addr = weakaddr.upgrade().unwrap();
-                let mut act = starting_addr._inner.lock().await;
-                let mut ctx = starting_addr.ctx.lock().await;
-                act.started(&mut *ctx).await;
-            }
-            while let Some(mut msg) = msg_rx.recv().await {
-                let owned = weakaddr.upgrade().unwrap();
-                let mut act = owned._inner.lock().await;
-                let mut ctx = owned.ctx.lock().await;
-                msg.handle(&mut *act, &mut *ctx).await;
-                drop(act);
-                drop(ctx);
-            }
+        tokio::spawn(actor_runner_loop(weakaddr, msg_rx));
+        ret
+    }
+    async fn create<F: Fn(&mut ActorContext<Self>) -> Self + Send>(f: F) -> Addr<Self> {
+        let (msg_queue, msg_rx) = MessageQueue::new();
+        let ctx = Arc::from(Mutex::from(ActorContext::empty(msg_queue)));
+        let mut wr = WeakAddr::empty();
+        let mut ctx_lock = ctx.lock().await;
+        let inner = Arc::new_cyclic(|weak_inner| {
+            wr.ctx = Arc::<tokio::sync::Mutex<ActorContext<_>>>::downgrade(&ctx);
+            wr._inner = Weak::clone(weak_inner);
+            ctx_lock.set_weakaddr(wr);
+            let ret = Mutex::from(f(&mut *ctx_lock));
+            drop(ctx_lock);
+            ret
         });
+        let ret = Addr::<Self> {
+            _inner: inner,
+            ctx: ctx,
+        };
+        let weakaddr = ret.downgrade();
+
+        tokio::spawn(actor_runner_loop(weakaddr, msg_rx));
         ret
     }
     async fn started(&mut self, _ctx: &mut ActorContext<Self>) {}
+}
+
+async fn actor_runner_loop<A: Actor>(
+    weakaddr: WeakAddr<A>,
+    mut msg_rx: UnboundedReceiver<QueuePayload<A>>,
+) {
+    {
+        let starting_addr = weakaddr.upgrade().unwrap();
+        let mut act = starting_addr._inner.lock().await;
+        let mut ctx = starting_addr.ctx.lock().await;
+        act.started(&mut *ctx).await;
+    }
+    while let Some(mut msg) = msg_rx.recv().await {
+        let owned = weakaddr.upgrade().unwrap();
+        let mut act = owned._inner.lock().await;
+        let mut ctx = owned.ctx.lock().await;
+        msg.handle(&mut *act, &mut *ctx).await;
+        drop(act);
+        drop(ctx);
+    }
 }
 
 #[async_trait]
