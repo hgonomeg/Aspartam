@@ -9,7 +9,6 @@ use tokio::{
 };
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
-    msg_queue: MessageQueue<T>,
 }
 unsafe impl<T: Actor> Send for ActorContext<T> {}
 
@@ -17,20 +16,11 @@ impl<T: Actor> ActorContext<T> {
     pub fn address(&self) -> Addr<T> {
         self.address.upgrade().unwrap()
     }
-    fn empty(msg_queue: MessageQueue<T>) -> Self {
-        Self {
-            address: WeakAddr::<T>::empty(),
-            msg_queue,
-        }
+    pub fn weak_address(&self) -> WeakAddr<T> {
+        self.address.clone()
     }
-    fn new(msg_queue: MessageQueue<T>, weakaddr:  WeakAddr<T>) -> Self {
-        Self {
-            address: weakaddr,
-            msg_queue,
-        }
-    }
-    fn set_weakaddr(&mut self, source: WeakAddr<T>) {
-        self.address = source;
+    fn new(weakaddr: WeakAddr<T>) -> Self {
+        Self { address: weakaddr }
     }
 }
 #[async_trait]
@@ -75,8 +65,17 @@ impl<M: 'static + Send, R: 'static + Send> Envelope<M, R> {
 }
 
 type QueuePayload<T> = Box<dyn EnvelopeProxy<T> + Send>;
+
 struct MessageQueue<T: Actor> {
     tx: mpsc::UnboundedSender<QueuePayload<T>>,
+}
+
+impl<T: Actor> Clone for MessageQueue<T> {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+        }
+    }
 }
 
 impl<T: Actor> MessageQueue<T> {
@@ -100,27 +99,44 @@ impl<T: Actor> MessageQueue<T> {
 
 pub struct Addr<T: Actor> {
     _inner: Arc<Mutex<T>>,
-    ctx: Arc<Mutex<ActorContext<T>>>,
+    msg_queue: MessageQueue<T>,
 }
 impl<T: Actor> Clone for Addr<T> {
     fn clone(&self) -> Self {
         Self {
             _inner: Arc::clone(&self._inner),
-            ctx: Arc::clone(&self.ctx),
+            msg_queue: self.msg_queue.clone(),
         }
     }
 }
 unsafe impl<T: Actor> Send for Addr<T> {}
 
+impl<T: Actor> Addr<T> {
+    pub async fn send<M>(&self, msg: M) -> <T as Handler<M>>::Response
+    where
+        M: 'static + Send,
+        T: Handler<M>,
+    {
+        let resp = self.msg_queue.send(msg);
+        resp.await.unwrap()
+    }
+    pub fn downgrade(&self) -> WeakAddr<T> {
+        WeakAddr::<T> {
+            _inner: Arc::<Mutex<T>>::downgrade(&self._inner),
+            msg_queue: self.msg_queue.clone(),
+        }
+    }
+}
+
 pub struct WeakAddr<T: Actor> {
     _inner: Weak<Mutex<T>>,
-    ctx: Weak<Mutex<ActorContext<T>>>,
+    msg_queue: MessageQueue<T>,
 }
 impl<T: Actor> Clone for WeakAddr<T> {
     fn clone(&self) -> Self {
         Self {
             _inner: Weak::clone(&self._inner),
-            ctx: Weak::clone(&self.ctx),
+            msg_queue: self.msg_queue.clone(),
         }
     }
 }
@@ -130,79 +146,37 @@ impl<T: Actor> WeakAddr<T> {
     pub fn upgrade(&self) -> Option<Addr<T>> {
         Some(Addr::<T> {
             _inner: self._inner.upgrade()?,
-            ctx: self.ctx.upgrade()?,
+            msg_queue: self.msg_queue.clone(),
         })
     }
-    fn empty() -> Self {
-        Self {
-            _inner: Weak::new(),
-            ctx: Weak::new()
-        }
-    }
-}
-
-impl<T: Actor> Addr<T> {
-    pub async fn send<M>(&self, msg: M) -> <T as Handler<M>>::Response
-    where
-        M: 'static + Send,
-        T: Handler<M>,
-    {
-        let ctx_lock = self.ctx.lock().await;
-        let resp = ctx_lock.msg_queue.send(msg);
-        drop(ctx_lock);
-        resp.await.unwrap()
-    }
-    pub fn downgrade(&self) -> WeakAddr<T> {
-        WeakAddr::<T> {
-            _inner: Arc::<Mutex<T>>::downgrade(&self._inner),
-            ctx: Arc::<Mutex<ActorContext<T>>>::downgrade(&self.ctx),
-        }
-    }
-    // fn new_cyclic<F: FnOnce(&WeakAddr<T>) -> Self>(f: F) -> Self {
-    //     let initial = WeakAddr::<T>::empty();
-    //     let content = f(&initial);
-        
-
-    // }
 }
 
 #[async_trait]
 pub trait Actor: 'static + Sized + Send {
-    async fn start(self) -> Addr<Self> {
+    fn start(self) -> Addr<Self> {
         let (msg_queue, msg_rx) = MessageQueue::new();
-
         let ret = Addr::<Self> {
             _inner: Arc::from(Mutex::from(self)),
-            ctx: Arc::from(Mutex::from(ActorContext::empty(msg_queue))),
+            msg_queue,
         };
-        let mut ctx_lock = ret.ctx.lock().await;
-        ctx_lock.set_weakaddr(ret.downgrade());
-        drop(ctx_lock);
         let weakaddr = ret.downgrade();
-
         tokio::spawn(actor_runner_loop(weakaddr, msg_rx));
         ret
     }
-    async fn create<F: Fn(&mut ActorContext<Self>) -> Self + Send>(f: F) -> Addr<Self> {
+    fn create<F: Fn(&mut ActorContext<Self>) -> Self + Send>(f: F) -> Addr<Self> {
         let (msg_queue, msg_rx) = MessageQueue::new();
-        let ctx = Arc::from(Mutex::from(ActorContext::empty(msg_queue)));
-        let mut wr = WeakAddr::empty();
-        let mut ctx_lock = ctx.lock().await;
-        let inner = Arc::new_cyclic(|weak_inner| {
-            wr.ctx = Arc::<tokio::sync::Mutex<ActorContext<_>>>::downgrade(&ctx);
-            wr._inner = Weak::clone(weak_inner);
-            ctx_lock.set_weakaddr(wr);
-            let ret = Mutex::from(f(&mut *ctx_lock));
-            drop(ctx_lock);
-            ret
-        });
         let ret = Addr::<Self> {
-            _inner: inner,
-            ctx: ctx,
+            _inner: Arc::new_cyclic(|x| {
+                let weakaddr = WeakAddr {
+                    _inner: x.clone(),
+                    msg_queue: msg_queue.clone(),
+                };
+                let mut ctx = ActorContext::new(weakaddr);
+                Mutex::from(f(&mut ctx))
+            }),
+            msg_queue,
         };
-        let weakaddr = ret.downgrade();
-
-        tokio::spawn(actor_runner_loop(weakaddr, msg_rx));
+        tokio::spawn(actor_runner_loop(ret.downgrade(), msg_rx));
         ret
     }
     async fn started(&mut self, _ctx: &mut ActorContext<Self>) {}
@@ -215,16 +189,19 @@ async fn actor_runner_loop<A: Actor>(
     {
         let starting_addr = weakaddr.upgrade().unwrap();
         let mut act = starting_addr._inner.lock().await;
-        let mut ctx = starting_addr.ctx.lock().await;
-        act.started(&mut *ctx).await;
+        let mut ctx = ActorContext {
+            address: weakaddr.clone(),
+        };
+        act.started(&mut ctx).await;
     }
     while let Some(mut msg) = msg_rx.recv().await {
         let owned = weakaddr.upgrade().unwrap();
         let mut act = owned._inner.lock().await;
-        let mut ctx = owned.ctx.lock().await;
-        msg.handle(&mut *act, &mut *ctx).await;
+        let mut ctx = ActorContext {
+            address: weakaddr.clone(),
+        };
+        msg.handle(&mut *act, &mut ctx).await;
         drop(act);
-        drop(ctx);
     }
 }
 
@@ -264,7 +241,7 @@ mod tests {
         }
 
         get_runtime().block_on(async {
-            let game = Game.start().await;
+            let game = Game.start();
             let _pong = game.send(Ping).await;
         });
     }
@@ -297,7 +274,7 @@ mod tests {
         }
 
         get_runtime().block_on(async {
-            let incrementor = Incrementor { request_count: 0 }.start().await;
+            let incrementor = Incrementor { request_count: 0 }.start();
             assert_eq!(incrementor.send(GetRequestCount).await, 0);
             assert_eq!(incrementor.send(2).await, 3);
             assert_eq!(incrementor.send(GetRequestCount).await, 1);
@@ -326,36 +303,29 @@ mod tests {
         }
         get_runtime().block_on(async {
             let (tx, rx) = oneshot::channel();
-            let d = DropMe { tx: Some(tx) }.start().await;
+            let d = DropMe { tx: Some(tx) }.start();
             drop(d);
             rx.await.unwrap();
         });
     }
-    // #[test]
-    // fn actor_create() {
+    #[test]
+    fn actor_create() {
+        struct Secondary {
+            _prim: WeakAddr<Primary>,
+        }
+        impl Actor for Secondary {}
+        struct Primary {
+            _sec: Addr<Secondary>,
+        }
+        impl Actor for Primary {}
 
-    //     struct Secondary {
-    //         prim: WeakAddr<Primary>
-    //     }
-    //     impl Actor for Secondary{ 
-            
-    //     }
-    //     struct Primary {
-    //         sec: Addr<Secondary>
-    //     }
-    //     impl Actor for Primary {
-
-    //     }
-
-    //     get_runtime().block_on(async {
-    //         let prim = Primary::create(move |a| {
-    //             let this = a.address();
-    //             Primary {
-    //                 sec: Secondary {
-    //                     prim: this.downgrade()
-    //                 }.start()
-    //             }
-    //         }).await;
-    //     })
-    // }
+        get_runtime().block_on(async {
+            let _prim = Primary::create(move |a| {
+                let this = a.weak_address();
+                Primary {
+                    _sec: Secondary { _prim: this }.start(),
+                }
+            });
+        })
+    }
 }
