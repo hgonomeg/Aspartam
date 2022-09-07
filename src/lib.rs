@@ -166,6 +166,12 @@ pub trait Actor: 'static + Sized + Send {
         let weakaddr = ret.downgrade();
 
         tokio::spawn(async move {
+            {
+                let starting_addr = weakaddr.upgrade().unwrap();
+                let mut act = starting_addr._inner.lock().await;
+                let mut ctx = starting_addr.ctx.lock().await;
+                act.started(&mut *ctx).await;
+            }
             while let Some(mut msg) = msg_rx.recv().await {
                 let owned = weakaddr.upgrade().unwrap();
                 let mut act = owned._inner.lock().await;
@@ -177,7 +183,7 @@ pub trait Actor: 'static + Sized + Send {
         });
         ret
     }
-    async fn started(&self, _ctx: &mut ActorContext<Self>) {}
+    async fn started(&mut self, _ctx: &mut ActorContext<Self>) {}
 }
 
 #[async_trait]
