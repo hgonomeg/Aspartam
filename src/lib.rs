@@ -223,7 +223,6 @@ mod tests {
 
     #[test]
     fn data_sanity() {
-        use futures_util::stream::StreamExt;
         struct Incrementor {
             request_count: usize,
         }
@@ -270,7 +269,7 @@ mod tests {
     fn memory_leaks() {
         struct DropMe {
             tx: Option<oneshot::Sender<()>>,
-        };
+        }
         impl Actor for DropMe {}
         impl Drop for DropMe {
             fn drop(&mut self) {
