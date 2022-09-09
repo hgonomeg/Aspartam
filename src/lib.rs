@@ -1,13 +1,13 @@
 use async_trait::async_trait;
-use std::sync::{Arc, Weak};
-use tokio::{
-    //sync::Mutex,
-    sync::{
-        mpsc::{self, UnboundedReceiver},
-        oneshot,
-    },
+use futures_util::stream::{Stream, StreamExt};
+use std::{
+    pin::Pin,
+    sync::{Arc, Weak},
 };
-use futures_util::stream::{StreamExt,Stream};
+use tokio::sync::{
+    mpsc::{self, UnboundedReceiver},
+    oneshot,
+};
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
 }
@@ -20,12 +20,12 @@ impl<T: Actor> ActorContext<T> {
     pub fn weak_address(&self) -> WeakAddr<T> {
         self.address.clone()
     }
-    pub fn add_stream<S,M>(&self, mut s: S) 
-    where 
-        S: 'static + Stream<Item=M> + Unpin + Send,
+    pub fn add_stream<S, M>(&self, mut s: S)
+    where
+        S: 'static + Stream<Item = M> + Unpin + Send,
         M: 'static + Send,
-        T: Handler<M>
-     {
+        T: Handler<M>,
+    {
         let addr = self.address.upgrade().unwrap();
         tokio::spawn(async move {
             while let Some(msg) = s.next().await {
@@ -164,20 +164,20 @@ pub trait Actor: 'static + Sized + Send {
     fn start(self) -> Addr<Self> {
         let (msg_queue, msg_rx) = MessageQueue::new();
         let ret = Addr::<Self> {
-            msg_queue: Arc::from(msg_queue)
+            msg_queue: Arc::from(msg_queue),
         };
         let weakaddr = ret.downgrade();
-        tokio::spawn(actor_runner_loop(self,ActorContext::new(weakaddr), msg_rx));
+        tokio::spawn(actor_runner_loop(self, ActorContext::new(weakaddr), msg_rx));
         ret
     }
     fn create<F: Fn(&mut ActorContext<Self>) -> Self + Send>(f: F) -> Addr<Self> {
         let (msg_queue, msg_rx) = MessageQueue::new();
         let ret = Addr::<Self> {
-            msg_queue: Arc::from(msg_queue)
+            msg_queue: Arc::from(msg_queue),
         };
         let weakaddr = ret.downgrade();
         let mut ctx = ActorContext::new(weakaddr);
-        tokio::spawn(actor_runner_loop(f(&mut ctx),ctx, msg_rx));
+        tokio::spawn(actor_runner_loop(f(&mut ctx), ctx, msg_rx));
         ret
     }
     async fn started(&mut self, _ctx: &mut ActorContext<Self>) {}
@@ -314,9 +314,64 @@ mod tests {
             let _prim = Primary::create(move |a| {
                 let this = a.address();
                 Primary {
-                    _sec: Secondary { _prim: this.downgrade() }.start(),
+                    _sec: Secondary {
+                        _prim: this.downgrade(),
+                    }
+                    .start(),
                 }
             });
         })
+    }
+    #[test]
+    fn handling_streams() {
+        struct Sh {
+            tx: Option<oneshot::Sender<usize>>,
+            message_count: usize,
+        }
+        impl Actor for Sh {}
+        #[derive(Clone)]
+        struct Ping;
+        struct As<S> {
+            stream: S,
+        }
+        unsafe impl<S> Send for As<S> {}
+        #[async_trait]
+        impl Handler<Ping> for Sh {
+            type Response = ();
+            async fn handle(
+                &mut self,
+                _msg: Ping,
+                _ctx: &mut ActorContext<Self>,
+            ) -> Self::Response {
+                self.message_count += 1;
+            }
+        }
+        #[async_trait]
+        impl<S> Handler<As<S>> for Sh
+        where
+            S: 'static + Stream<Item = Ping> + Unpin + Send,
+        {
+            type Response = ();
+            async fn handle(&mut self, msg: As<S>, ctx: &mut ActorContext<Self>) -> Self::Response {
+                ctx.add_stream(msg.stream);
+            }
+        }
+        impl Drop for Sh {
+            fn drop(&mut self) {
+                self.tx.take().unwrap().send(self.message_count).unwrap();
+            }
+        }
+        get_runtime().block_on(async {
+            let (tx, rx) = oneshot::channel();
+            let d = Sh {
+                tx: Some(tx),
+                message_count: 0,
+            }
+            .start();
+            let stream = futures_util::stream::iter(std::iter::repeat(Ping).take(1000));
+            d.send(As { stream }).await;
+            drop(d);
+            assert_eq!(rx.await.unwrap(), 1000);
+        });
     }
 }
