@@ -273,12 +273,12 @@ mod tests {
             assert_eq!(incrementor.send(9).await, 10);
             assert_eq!(incrementor.send(GetRequestCount).await, 3);
             let mut i = 0;
-            while i < 500 {
+            while i < 5000 {
                 let r = incrementor.send(i).await;
                 i += 1;
                 assert_eq!(r, i);
             }
-            assert_eq!(incrementor.send(GetRequestCount).await, 503);
+            assert_eq!(incrementor.send(GetRequestCount).await, 5003);
         });
     }
     #[test]
@@ -370,8 +370,21 @@ mod tests {
             .start();
             let stream = futures_util::stream::iter(std::iter::repeat(Ping).take(1000));
             d.send(As { stream }).await;
+
+            let stream2 = futures_util::stream::iter(std::iter::repeat(Ping).take(5000));
+            d.send(As { stream: stream2 }).await;
+
+            let stream3 = futures_util::stream::iter(std::iter::repeat(Ping).take(10000));
+            d.send(As { stream: stream3 }).await;
+
+            d.send(Ping).await;
+            d.send(Ping).await;
+            d.send(Ping).await;
+            d.send(Ping).await;
+            d.send(Ping).await;
+
             drop(d);
-            assert_eq!(rx.await.unwrap(), 1000);
+            assert_eq!(rx.await.unwrap(), 16005);
         });
     }
 }
