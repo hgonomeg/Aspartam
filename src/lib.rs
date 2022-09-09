@@ -1,9 +1,6 @@
 use async_trait::async_trait;
 use futures_util::stream::{Stream, StreamExt};
-use std::{
-    pin::Pin,
-    sync::{Arc, Weak},
-};
+use std::sync::{Arc, Weak};
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver},
     oneshot,
@@ -55,9 +52,10 @@ where
 {
     async fn handle(&mut self, act: &mut A, ctx: &mut ActorContext<A>) {
         let ret = act.handle(self.item.take().unwrap(), ctx).await;
-        let tx = self.tx.take().unwrap();
-        if let Err(_e) = tx.send(ret) {
-            panic!("Failed to send response: oneshot::Receiver must be dead.");
+        if let Some(tx) = self.tx.take() {
+            if let Err(_e) = tx.send(ret) {
+                panic!("Failed to send response: oneshot::Receiver must be dead.");
+            }
         }
     }
 }
@@ -67,6 +65,12 @@ impl<M: 'static + Send, R: 'static + Send> Envelope<M, R> {
         Self {
             item: Some(item),
             tx: Some(tx),
+        }
+    }
+    pub fn new_no_sender(item: M) -> Self {
+        Self {
+            item: Some(item),
+            tx: None,
         }
     }
     pub fn pack<A>(self) -> QueuePayload<A>
@@ -109,6 +113,16 @@ impl<T: Actor> MessageQueue<T> {
         }
         rx
     }
+    fn do_send<M>(&self, msg: M)
+    where
+        T: Handler<M>,
+        M: 'static + Send,
+    {
+        let envelope = Envelope::new_no_sender(msg).pack();
+        if let Err(_e) = self.tx.send(envelope) {
+            panic!("Failed to enqueue message for actor. Receiver must be dead.");
+        }
+    }
 }
 
 pub struct Addr<T: Actor> {
@@ -131,6 +145,13 @@ impl<T: Actor> Addr<T> {
     {
         let resp = self.msg_queue.send(msg);
         resp.await.unwrap()
+    }
+    pub fn do_send<M>(&self, msg: M)
+    where
+        M: 'static + Send,
+        T: Handler<M>,
+    {
+        self.msg_queue.do_send(msg)
     }
     pub fn downgrade(&self) -> WeakAddr<T> {
         WeakAddr::<T> {
@@ -369,19 +390,19 @@ mod tests {
             }
             .start();
             let stream = futures_util::stream::iter(std::iter::repeat(Ping).take(1000));
-            d.send(As { stream }).await;
+            d.do_send(As { stream });
 
             let stream2 = futures_util::stream::iter(std::iter::repeat(Ping).take(5000));
-            d.send(As { stream: stream2 }).await;
+            d.do_send(As { stream: stream2 });
 
             let stream3 = futures_util::stream::iter(std::iter::repeat(Ping).take(10000));
-            d.send(As { stream: stream3 }).await;
+            d.do_send(As { stream: stream3 });
 
-            d.send(Ping).await;
-            d.send(Ping).await;
-            d.send(Ping).await;
-            d.send(Ping).await;
-            d.send(Ping).await;
+            d.do_send(Ping);
+            d.do_send(Ping);
+            d.do_send(Ping);
+            d.do_send(Ping);
+            d.do_send(Ping);
 
             drop(d);
             assert_eq!(rx.await.unwrap(), 16005);
