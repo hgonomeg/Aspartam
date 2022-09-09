@@ -1,12 +1,13 @@
 use async_trait::async_trait;
 use std::sync::{Arc, Weak};
 use tokio::{
-    sync::Mutex,
+    //sync::Mutex,
     sync::{
         mpsc::{self, UnboundedReceiver},
         oneshot,
     },
 };
+use futures_util::stream::{StreamExt,Stream};
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
 }
@@ -18,6 +19,19 @@ impl<T: Actor> ActorContext<T> {
     }
     pub fn weak_address(&self) -> WeakAddr<T> {
         self.address.clone()
+    }
+    pub fn add_stream<S,M>(&self, mut s: S) 
+    where 
+        S: 'static + Stream<Item=M> + Unpin + Send,
+        M: 'static + Send,
+        T: Handler<M>
+     {
+        let addr = self.address.upgrade().unwrap();
+        tokio::spawn(async move {
+            while let Some(msg) = s.next().await {
+                let _ = addr.send(msg).await;
+            }
+        });
     }
     fn new(weakaddr: WeakAddr<T>) -> Self {
         Self { address: weakaddr }
