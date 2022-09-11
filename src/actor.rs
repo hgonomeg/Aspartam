@@ -18,7 +18,7 @@ pub trait Actor: 'static + Sized + Send {
         tokio::spawn(actor_runner_loop(self, ActorContext::new(weakaddr), msg_rx));
         ret
     }
-    fn create<F: Fn(&mut ActorContext<Self>) -> Self + Send>(f: F) -> Addr<Self> {
+    fn create<F: FnOnce(&mut ActorContext<Self>) -> Self + Send>(f: F) -> Addr<Self> {
         let (msg_queue, msg_rx) = MessageQueue::new();
         let ret = Addr::<Self> {
             msg_queue: Arc::from(msg_queue),
