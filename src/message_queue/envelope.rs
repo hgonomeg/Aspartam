@@ -22,9 +22,12 @@ where
     async fn handle(&mut self, act: &mut A, ctx: &mut ActorContext<A>) {
         let ret = act.handle(self.item.take().unwrap(), ctx).await;
         if let Some(tx) = self.tx.take() {
-            if let Err(_e) = tx.send(ret) {
-                panic!("Failed to send response: oneshot::Receiver must be dead.");
-            }
+            let _ = tx.send(ret);
+            // We shouldn't actually panic when this is true:
+            // if let Err(_e) = tx.send(ret) {
+            //     panic!("Failed to send response: oneshot::Receiver must be dead.");
+            // }
+            // This might happen when the future created by Addr::send() gets dropped
         }
     }
 }
