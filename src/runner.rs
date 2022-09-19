@@ -23,7 +23,7 @@ pub(crate) async fn actor_runner_loop<A: Actor>(
     mut msg_rx: UnboundedReceiver<QueuePayload<A>>,
 ) {
     // starting phase
-    assert!(ctx.state() == ActorState::Starting);
+    assert_eq!(ctx.state(), ActorState::Starting);
     act.started(&mut ctx).await;
     if ctx.state() == ActorState::Starting {
         ctx.set_state(ActorState::Running);
@@ -58,12 +58,12 @@ pub(crate) async fn actor_runner_loop<A: Actor>(
             //     1. the receiver yielding None
             //     2. calling ctx.stop() in Handler<M>::handle()
             stopping_check(&mut act, &mut ctx).await;
-            if ctx.state() != ActorState::Stopped {
+            if ctx.state() == ActorState::Stopped {
                 break;
             }
         }
     }
     // final phase
-    assert!(ctx.state() == ActorState::Stopped);
+    assert_eq!(ctx.state(), ActorState::Stopped);
     act.stopped(&mut ctx).await;
 }
