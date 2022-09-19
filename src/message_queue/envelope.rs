@@ -20,14 +20,19 @@ where
     M: Send,
 {
     async fn handle(&mut self, act: &mut A, ctx: &mut ActorContext<A>) {
-        let ret = act.handle(self.item.take().unwrap(), ctx).await;
+        let item = self.item.take().unwrap();
         if let Some(tx) = self.tx.take() {
-            let _ = tx.send(ret);
-            // We shouldn't actually panic when this is true:
-            // if let Err(_e) = tx.send(ret) {
-            //     panic!("Failed to send response: oneshot::Receiver must be dead.");
-            // }
-            // This might happen when the future created by Addr::send() gets dropped
+            // If the sender got closed, the future created by Addr::send() got dropped.
+            // No need to process the message.
+            if ! tx.is_closed() {
+                let ret = act.handle(item, ctx).await;
+                // We shouldn't panic when this fails:
+                let _ = tx.send(ret);
+                // This might happen when the future created by Addr::send() gets dropped right after the message got handled
+            }
+        } else {
+            // handles Addr::do_send() messages
+            let _ = act.handle(item, ctx).await;
         }
     }
 }
