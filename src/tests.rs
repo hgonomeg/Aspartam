@@ -310,7 +310,6 @@ fn do_send_gets_delivered() {
 #[test]
 fn actor_stopping_message_correctness() {
     use crate::actor::Stopping;
-    //use std::time::Duration;
 
     struct DummyHandler {
         should_terminate: Option<bool>,
@@ -426,17 +425,17 @@ fn actor_stopping_message_correctness() {
         }
         actor.send(DummyResult::StopProcessing).await.unwrap();
 
-        // With current error-handling this has to cause panic.
-        // actor.do_send(NeverDelivered);
+        // Nothing happens
+        actor.do_send(NeverDelivered);
 
         //ensure that actor gets stopped
         stopped_notifier.await.unwrap();
 
-        // With current error-handling this has to cause panic. Can be uncommented after the API gets changed.
-
-        // let act = actor.clone();
-        // let never_finishing = tokio::spawn(async move { act.send(NeverDelivered).await; });
-        // assert!(tokio::time::timeout(Duration::from_millis(200), never_finishing).await.is_err());
+        assert_eq!(actor.try_send(NeverDelivered), Err(ActorError::CannotSend));
+        assert_eq!(
+            actor.send(NeverDelivered).await,
+            Err(ActorError::CannotSend)
+        );
     })
 }
 
