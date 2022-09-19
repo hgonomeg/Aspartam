@@ -6,7 +6,7 @@ mod runner;
 
 pub mod prelude {
     pub use crate::{
-        actor::{Actor, Handler},
+        actor::{Actor, ActorState, Handler},
         addr::{Addr, WeakAddr},
         context::ActorContext,
     };

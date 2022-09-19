@@ -308,7 +308,7 @@ fn do_send_gets_delivered() {
 }
 
 #[test]
-fn basic_actor_lifecycle() {
+fn actor_stopping_message_correctness() {
     use crate::actor::Stopping;
     //use std::time::Duration;
 
@@ -437,5 +437,121 @@ fn basic_actor_lifecycle() {
         // let act = actor.clone();
         // let never_finishing = tokio::spawn(async move { act.send(NeverDelivered).await; });
         // assert!(tokio::time::timeout(Duration::from_millis(200), never_finishing).await.is_err());
+    })
+}
+
+#[test]
+fn actor_basic_lifecycle() {
+    use crate::actor::Stopping;
+    struct Dummy {
+        starting_notifier: Option<oneshot::Sender<()>>,
+        stopping_notifier: Option<oneshot::Sender<()>>,
+        stopped_notifier: Option<oneshot::Sender<()>>,
+    }
+
+    struct DummyMessage;
+
+    #[async_trait]
+    impl Actor for Dummy {
+        async fn started(&mut self, ctx: &mut ActorContext<Self>) {
+            assert_eq!(ctx.state(), ActorState::Starting);
+            self.starting_notifier.take().unwrap().send(()).unwrap()
+        }
+        async fn stopping(&mut self, ctx: &mut ActorContext<Self>) -> Stopping {
+            assert_eq!(ctx.state(), ActorState::Stopping);
+            self.stopping_notifier.take().unwrap().send(()).unwrap();
+            Stopping::Stop
+        }
+        async fn stopped(&mut self, ctx: &mut ActorContext<Self>) {
+            assert_eq!(ctx.state(), ActorState::Stopped);
+            self.stopped_notifier.take().unwrap().send(()).unwrap();
+        }
+    }
+
+    #[async_trait]
+    impl Handler<DummyMessage> for Dummy {
+        type Response = ();
+        async fn handle(
+            &mut self,
+            _: DummyMessage,
+            ctx: &mut ActorContext<Self>,
+        ) -> Self::Response {
+            assert_eq!(ctx.state(), ActorState::Running);
+        }
+    }
+
+    get_runtime().block_on(async {
+        let (tx1, starting_rx) = oneshot::channel();
+        let (tx2, stopping_rx) = oneshot::channel();
+        let (tx3, stopped_rx) = oneshot::channel();
+        let actor = Dummy {
+            starting_notifier: Some(tx1),
+            stopping_notifier: Some(tx2),
+            stopped_notifier: Some(tx3),
+        }
+        .start();
+
+        starting_rx.await.unwrap();
+        actor.send(DummyMessage).await;
+        drop(actor);
+        stopping_rx.await.unwrap();
+        stopped_rx.await.unwrap();
+    })
+}
+
+#[test]
+fn actor_stopping_new_addr_correctness() {
+    use crate::actor::Stopping;
+    struct Dummy {
+        newaddr_tx: Option<oneshot::Sender<Addr<Dummy>>>,
+    }
+
+    struct DummyMessage(i32);
+
+    #[async_trait]
+    impl Actor for Dummy {
+        async fn stopping(&mut self, ctx: &mut ActorContext<Self>) -> Stopping {
+            match self.newaddr_tx.take() {
+                None => Stopping::Stop,
+                Some(tx) => {
+                    let new_address = ctx.address();
+                    let _ = tx.send(new_address);
+                    Stopping::Continue
+                }
+            }
+        }
+        async fn stopped(&mut self, _ctx: &mut ActorContext<Self>) {
+            assert!(self.newaddr_tx.is_none());
+        }
+    }
+
+    #[async_trait]
+    impl Handler<DummyMessage> for Dummy {
+        type Response = i32;
+        async fn handle(
+            &mut self,
+            item: DummyMessage,
+            _ctx: &mut ActorContext<Self>,
+        ) -> Self::Response {
+            item.0 * 2
+        }
+    }
+
+    get_runtime().block_on(async {
+        let (tx, rx) = oneshot::channel();
+        let old_addr = Dummy {
+            newaddr_tx: Some(tx),
+        }
+        .start();
+
+        assert_eq!(old_addr.send(DummyMessage(-5)).await, -10);
+        assert_eq!(old_addr.send(DummyMessage(3)).await, 6);
+
+        drop(old_addr);
+
+        let new_addr = rx.await.unwrap();
+
+        assert_eq!(new_addr.send(DummyMessage(7)).await, 14);
+        assert_eq!(new_addr.send(DummyMessage(13)).await, 26);
     })
 }
