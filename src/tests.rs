@@ -57,19 +57,19 @@ fn data_sanity() {
 
     get_runtime().block_on(async {
         let incrementor = Incrementor { request_count: 0 }.start();
-        assert_eq!(incrementor.send(GetRequestCount).await, 0);
-        assert_eq!(incrementor.send(2).await, 3);
-        assert_eq!(incrementor.send(GetRequestCount).await, 1);
-        assert_eq!(incrementor.send(7).await, 8);
-        assert_eq!(incrementor.send(9).await, 10);
-        assert_eq!(incrementor.send(GetRequestCount).await, 3);
+        assert_eq!(incrementor.send(GetRequestCount).await.unwrap(), 0);
+        assert_eq!(incrementor.send(2).await.unwrap(), 3);
+        assert_eq!(incrementor.send(GetRequestCount).await.unwrap(), 1);
+        assert_eq!(incrementor.send(7).await.unwrap(), 8);
+        assert_eq!(incrementor.send(9).await.unwrap(), 10);
+        assert_eq!(incrementor.send(GetRequestCount).await.unwrap(), 3);
         let mut i = 0;
         while i < 5000 {
-            let r = incrementor.send(i).await;
+            let r = incrementor.send(i).await.unwrap();
             i += 1;
             assert_eq!(r, i);
         }
-        assert_eq!(incrementor.send(GetRequestCount).await, 5003);
+        assert_eq!(incrementor.send(GetRequestCount).await.unwrap(), 5003);
     });
 }
 #[test]
@@ -156,19 +156,19 @@ fn handling_streams() {
         }
         .start();
         let stream = futures_util::stream::iter(std::iter::repeat(Ping).take(1000));
-        d.send(As { stream }).await;
+        d.send(As { stream }).await.unwrap();
 
         let stream2 = futures_util::stream::iter(std::iter::repeat(Ping).take(5000));
-        d.send(As { stream: stream2 }).await;
+        d.send(As { stream: stream2 }).await.unwrap();
 
         let stream3 = futures_util::stream::iter(std::iter::repeat(Ping).take(10000));
-        d.send(As { stream: stream3 }).await;
+        d.send(As { stream: stream3 }).await.unwrap();
 
-        d.send(Ping).await;
-        d.send(Ping).await;
-        d.send(Ping).await;
-        d.send(Ping).await;
-        d.send(Ping).await;
+        d.send(Ping).await.unwrap();
+        d.send(Ping).await.unwrap();
+        d.send(Ping).await.unwrap();
+        d.send(Ping).await.unwrap();
+        d.send(Ping).await.unwrap();
 
         drop(d);
         assert_eq!(rx.await.unwrap(), 16005);
@@ -278,7 +278,7 @@ fn do_send_gets_delivered() {
         let m = memo.clone();
         let send_job = tokio::spawn(async move {
             for i in list.into_iter() {
-                m.send(i).await;
+                m.send(i).await.unwrap();
             }
         });
 
@@ -295,14 +295,14 @@ fn do_send_gets_delivered() {
         let all_sent_fingerprints = [send_fingerprints, do_send_fingerprints].concat();
 
         send_job.await.unwrap();
-        memo.send(last_one).await;
+        memo.send(last_one).await.unwrap();
 
         for i in not_sent_fingerprints.into_iter() {
-            assert_eq!(memo.send(HasFingerprint(i)).await, false);
+            assert_eq!(memo.send(HasFingerprint(i)).await, Ok(false));
         }
 
         for i in all_sent_fingerprints.into_iter() {
-            assert_eq!(memo.send(HasFingerprint(i)).await, true);
+            assert_eq!(memo.send(HasFingerprint(i)).await, Ok(true));
         }
     })
 }
@@ -424,7 +424,7 @@ fn actor_stopping_message_correctness() {
             // ensure that "stopping -> continue" cycles do not drop events
             rx.await.unwrap();
         }
-        actor.send(DummyResult::StopProcessing).await;
+        actor.send(DummyResult::StopProcessing).await.unwrap();
 
         // With current error-handling this has to cause panic.
         // actor.do_send(NeverDelivered);
@@ -492,7 +492,7 @@ fn actor_basic_lifecycle() {
         .start();
 
         starting_rx.await.unwrap();
-        actor.send(DummyMessage).await;
+        actor.send(DummyMessage).await.unwrap();
         drop(actor);
         stopping_rx.await.unwrap();
         stopped_rx.await.unwrap();
@@ -544,14 +544,14 @@ fn actor_stopping_new_addr_correctness() {
         }
         .start();
 
-        assert_eq!(old_addr.send(DummyMessage(-5)).await, -10);
-        assert_eq!(old_addr.send(DummyMessage(3)).await, 6);
+        assert_eq!(old_addr.send(DummyMessage(-5)).await.unwrap(), -10);
+        assert_eq!(old_addr.send(DummyMessage(3)).await.unwrap(), 6);
 
         drop(old_addr);
 
         let new_addr = rx.await.unwrap();
 
-        assert_eq!(new_addr.send(DummyMessage(7)).await, 14);
-        assert_eq!(new_addr.send(DummyMessage(13)).await, 26);
+        assert_eq!(new_addr.send(DummyMessage(7)).await.unwrap(), 14);
+        assert_eq!(new_addr.send(DummyMessage(13)).await.unwrap(), 26);
     })
 }

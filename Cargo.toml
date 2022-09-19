@@ -9,6 +9,7 @@ edition = "2021"
 tokio = { version = "1", features = ["sync","rt"] }
 async-trait = "0.1"
 futures-util = { version = "0.3" }
+thiserror = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["sync","rt-multi-thread","time"] }
