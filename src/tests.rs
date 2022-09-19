@@ -292,10 +292,10 @@ fn do_send_gets_delivered() {
         };
 
         send_fingerprints.push(last_one.clone());
+        let all_sent_fingerprints = [send_fingerprints, do_send_fingerprints].concat();
+
         send_job.await.unwrap();
         memo.send(last_one).await;
-
-        let all_sent_fingerprints = [send_fingerprints, do_send_fingerprints].concat();
 
         for i in not_sent_fingerprints.into_iter() {
             assert_eq!(memo.send(HasFingerprint(i)).await, false);
@@ -304,5 +304,127 @@ fn do_send_gets_delivered() {
         for i in all_sent_fingerprints.into_iter() {
             assert_eq!(memo.send(HasFingerprint(i)).await, true);
         }
+    })
+}
+
+#[test]
+fn basic_actor_stopping() {
+    use crate::actor::Stopping;
+    use std::time::Duration;
+
+    struct DummyHandler {
+        should_terminate: Option<bool>,
+        stopped_notifier: Option<oneshot::Sender<()>>
+    }
+
+    #[async_trait]
+    impl Actor for DummyHandler {
+        async fn stopped(&mut self, _ctx: &mut ActorContext<Self>) {
+            self.stopped_notifier.take().unwrap().send(()).unwrap()
+        }
+        async fn stopping(&mut self, _ctx: &mut ActorContext<Self>) -> Stopping {
+            match self.should_terminate {
+                None => {
+                    panic!("This should be unreachable. Actor is stopping without a reason.")
+                }
+                Some(non_recoverable_state) => {
+                    if non_recoverable_state {
+                        Stopping::Stop
+                    } else {
+                        Stopping::Continue
+                    }
+                }
+            }
+        }
+    }
+
+    enum DummyResult {
+        Allright,
+        RecoverableError,
+        StopProcessing
+    }
+
+    struct NeverDelivered;
+
+    struct ShouldBeDelivered(oneshot::Sender<()>);
+
+    impl ShouldBeDelivered {
+        pub fn new() -> (Self,oneshot::Receiver<()>) {
+            let (tx,rx) = oneshot::channel();
+            (Self(tx),rx)
+        }
+    }
+
+    #[async_trait]
+    impl Handler<NeverDelivered> for DummyHandler {
+        type Response = ();
+        async fn handle(&mut self, _item: NeverDelivered, _ctx: &mut ActorContext<Self>) -> Self::Response {
+            panic!("This is meant to be unreachable. Actor did not stop.");
+        }
+    }
+
+    #[async_trait]
+    impl Handler<DummyResult> for DummyHandler {
+        type Response = ();
+        async fn handle(&mut self, item: DummyResult, ctx: &mut ActorContext<Self>) -> Self::Response {
+            match item {
+                DummyResult::Allright => {
+                    self.should_terminate = None;
+                },
+                DummyResult::RecoverableError => {
+                    self.should_terminate = Some(false);
+                    ctx.stop();
+                },
+                DummyResult::StopProcessing => {
+                    self.should_terminate = Some(true);
+                    ctx.stop();
+                }
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Handler<ShouldBeDelivered> for DummyHandler {
+        type Response = ();
+        async fn handle(&mut self, item: ShouldBeDelivered, _ctx: &mut ActorContext<Self>) -> Self::Response {
+            let tx = item.0;
+            tx.send(()).unwrap();
+        }
+    }
+
+    get_runtime().block_on(async {
+        let (tx,stopped_notifier) = oneshot::channel();
+        let actor = DummyHandler{
+            stopped_notifier: Some(tx),
+            should_terminate: None
+        }.start();
+
+        let mut rxs = vec![];
+        for _i in 0..100 {
+            let (vibe_check,rx) = ShouldBeDelivered::new();
+            actor.do_send(vibe_check);
+            actor.do_send(DummyResult::Allright);
+            actor.do_send(DummyResult::RecoverableError);
+            rxs.push(rx);
+        }
+        for rx in rxs.drain(..) {
+            // ensure that "stopping -> continue" cycles do not drop events
+            rx.await.unwrap();
+        }
+        actor.send(DummyResult::StopProcessing).await;
+
+        // With current error-handling this has to cause panic.
+        // actor.do_send(NeverDelivered);
+
+        //ensure that actor gets stopped
+        stopped_notifier.await.unwrap();
+        
+        // With current error-handling this has to cause panic. Can be uncommented after the API gets changed.
+
+        // let act = actor.clone();
+        // let never_finishing = tokio::spawn(async move { act.send(NeverDelivered).await; });
+        // assert!(tokio::time::timeout(Duration::from_millis(200), never_finishing).await.is_err());
+
+        
     })
 }
