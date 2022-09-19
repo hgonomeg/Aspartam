@@ -1,8 +1,5 @@
 use crate::actor::*;
-use tokio::sync::{
-    mpsc,
-    oneshot,
-};
+use tokio::sync::{mpsc, oneshot};
 
 mod envelope;
 use envelope::*;

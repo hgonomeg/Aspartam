@@ -16,11 +16,7 @@ fn basic_messages() {
     #[async_trait]
     impl Handler<Ping> for Game {
         type Response = Pong;
-        async fn handle(
-            &mut self,
-            _msg: Ping,
-            _ctx: &mut ActorContext<Self>,
-        ) -> Self::Response {
+        async fn handle(&mut self, _msg: Ping, _ctx: &mut ActorContext<Self>) -> Self::Response {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             Pong
         }
@@ -133,11 +129,7 @@ fn handling_streams() {
     #[async_trait]
     impl Handler<Ping> for Sh {
         type Response = ();
-        async fn handle(
-            &mut self,
-            _msg: Ping,
-            _ctx: &mut ActorContext<Self>,
-        ) -> Self::Response {
+        async fn handle(&mut self, _msg: Ping, _ctx: &mut ActorContext<Self>) -> Self::Response {
             self.message_count += 1;
         }
     }

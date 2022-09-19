@@ -1,24 +1,19 @@
-use crate::{
-    addr::*,
-    context::ActorContext,
-    message_queue::{MessageQueue},
-    runner::*,
-};
+use crate::{addr::*, context::ActorContext, message_queue::MessageQueue, runner::*};
 use async_trait::async_trait;
 use std::sync::Arc;
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActorState {
     Starting,
     Running,
     Stopping,
-    Stopped
+    Stopped,
 }
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Stopping {
     Continue,
-    Stop
+    Stop,
 }
 
 #[async_trait]
@@ -43,11 +38,11 @@ pub trait Actor: 'static + Sized + Send {
         ret
     }
     async fn started(&mut self, _ctx: &mut ActorContext<Self>) {}
-    async fn stopping(&mut self, _ctx: &mut ActorContext<Self>) -> Stopping { Stopping::Stop } 
+    async fn stopping(&mut self, _ctx: &mut ActorContext<Self>) -> Stopping {
+        Stopping::Stop
+    }
     async fn stopped(&mut self, _ctx: &mut ActorContext<Self>) {}
 }
-
-
 
 #[async_trait]
 pub trait Handler<T: Send>: Actor {

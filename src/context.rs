@@ -1,12 +1,12 @@
 use crate::{
-    actor::{Actor, Handler, ActorState},
+    actor::{Actor, ActorState, Handler},
     addr::{Addr, WeakAddr},
 };
 use futures_util::stream::{Stream, StreamExt};
 
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
-    state: ActorState
+    state: ActorState,
 }
 unsafe impl<T: Actor> Send for ActorContext<T> {}
 
@@ -23,10 +23,10 @@ impl<T: Actor> ActorContext<T> {
         self.address.upgrade().unwrap()
     }
     #[inline]
-    pub fn notify<M>(&self, msg: M) 
+    pub fn notify<M>(&self, msg: M)
     where
         M: 'static + Send,
-        T: Handler<M>
+        T: Handler<M>,
     {
         self.address().do_send(msg)
     }
@@ -48,7 +48,10 @@ impl<T: Actor> ActorContext<T> {
         });
     }
     pub(crate) fn new(weakaddr: WeakAddr<T>) -> Self {
-        Self { address: weakaddr, state: ActorState::Starting }
+        Self {
+            address: weakaddr,
+            state: ActorState::Starting,
+        }
     }
     pub(crate) fn set_state(&mut self, state: ActorState) {
         self.state = state;
