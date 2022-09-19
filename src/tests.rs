@@ -174,3 +174,135 @@ fn handling_streams() {
         assert_eq!(rx.await.unwrap(), 16005);
     });
 }
+
+#[test]
+fn do_send_gets_delivered() {
+    use std::collections::HashSet;
+
+    #[derive(Hash, Eq, PartialEq, Clone)]
+    struct Fingerprint {
+        some_data: u32,
+        some_text: String,
+    }
+
+    #[derive(Default)]
+    struct Memorizer {
+        hashset: HashSet<Fingerprint>,
+    }
+    impl Actor for Memorizer {}
+
+    struct HasFingerprint(Fingerprint);
+
+    #[async_trait]
+    impl Handler<HasFingerprint> for Memorizer {
+        type Response = bool;
+
+        async fn handle(
+            &mut self,
+            msg: HasFingerprint,
+            _ctx: &mut ActorContext<Self>,
+        ) -> Self::Response {
+            self.hashset.contains(&msg.0)
+        }
+    }
+
+    #[async_trait]
+    impl Handler<Fingerprint> for Memorizer {
+        type Response = bool;
+
+        async fn handle(
+            &mut self,
+            msg: Fingerprint,
+            _ctx: &mut ActorContext<Self>,
+        ) -> Self::Response {
+            self.hashset.insert(msg)
+        }
+    }
+    get_runtime().block_on(async {
+        let memo = Memorizer::default().start();
+        let do_send_fingerprints = vec![
+            Fingerprint {
+                some_data: 775,
+                some_text: "Hello".to_owned(),
+            },
+            Fingerprint {
+                some_data: 221,
+                some_text: "Good morning".to_owned(),
+            },
+            Fingerprint {
+                some_data: 348,
+                some_text: "Good afternoon".to_owned(),
+            },
+            Fingerprint {
+                some_data: 726,
+                some_text: "Hi".to_owned(),
+            },
+            Fingerprint {
+                some_data: 823,
+                some_text: "Good evening".to_owned(),
+            },
+        ];
+        let mut send_fingerprints = vec![
+            Fingerprint {
+                some_data: 135,
+                some_text: "Water".to_owned(),
+            },
+            Fingerprint {
+                some_data: 776,
+                some_text: "Stone".to_owned(),
+            },
+            Fingerprint {
+                some_data: 285,
+                some_text: "Fire".to_owned(),
+            },
+            Fingerprint {
+                some_data: 431,
+                some_text: "Air".to_owned(),
+            },
+        ];
+        let not_sent_fingerprints = vec![
+            Fingerprint {
+                some_data: 113,
+                some_text: "Underwater".to_owned(),
+            },
+            Fingerprint {
+                some_data: 663,
+                some_text: "UFO".to_owned(),
+            },
+            Fingerprint {
+                some_data: 667,
+                some_text: "Bermuda".to_owned(),
+            },
+        ];
+        let list = send_fingerprints.clone();
+        let m = memo.clone();
+        let send_job = tokio::spawn(async move {
+            for i in list.into_iter() {
+                m.send(i).await;
+            }
+        });
+
+        for i in do_send_fingerprints.iter().cloned() {
+            memo.do_send(i);
+        }
+
+        let last_one = Fingerprint {
+            some_data: 720,
+            some_text: "Essence".to_owned(),
+        };
+
+        send_fingerprints.push(last_one.clone());
+        send_job.await.unwrap();
+        memo.send(last_one).await;
+
+        let all_sent_fingerprints = [send_fingerprints, do_send_fingerprints].concat();
+
+        for i in not_sent_fingerprints.into_iter() {
+            assert_eq!(memo.send(HasFingerprint(i)).await, false);
+        }
+
+        for i in all_sent_fingerprints.into_iter() {
+            assert_eq!(memo.send(HasFingerprint(i)).await, true);
+        }
+    })
+}
