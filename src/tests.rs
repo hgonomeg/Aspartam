@@ -308,9 +308,9 @@ fn do_send_gets_delivered() {
 }
 
 #[test]
-fn basic_actor_stopping() {
+fn basic_actor_lifecycle() {
     use crate::actor::Stopping;
-    use std::time::Duration;
+    //use std::time::Duration;
 
     struct DummyHandler {
         should_terminate: Option<bool>,
