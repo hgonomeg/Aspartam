@@ -1,5 +1,5 @@
 use crate::{
-    actor::{Actor, Handler},
+    actor::{Actor, Handler, ActorState},
     addr::{Addr, WeakAddr},
 };
 use futures_util::stream::{Stream, StreamExt};

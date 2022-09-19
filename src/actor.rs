@@ -1,11 +1,25 @@
 use crate::{
     addr::*,
     context::ActorContext,
-    message_queue::{MessageQueue, QueuePayload},
+    message_queue::{MessageQueue},
+    runner::*,
 };
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedReceiver;
+
+#[derive(Clone,Copy,Debug)]
+pub enum ActorState {
+    Starting,
+    Running,
+    Stopping,
+    Stopped
+}
+
+#[derive(Clone,Copy,Debug)]
+pub enum Stopping {
+    Continue,
+    Stop
+}
 
 #[async_trait]
 pub trait Actor: 'static + Sized + Send {
@@ -29,20 +43,11 @@ pub trait Actor: 'static + Sized + Send {
         ret
     }
     async fn started(&mut self, _ctx: &mut ActorContext<Self>) {}
+    async fn stopping(&mut self, _ctx: &mut ActorContext<Self>) -> Stopping { Stopping::Stop } 
     async fn stopped(&mut self, _ctx: &mut ActorContext<Self>) {}
 }
 
-async fn actor_runner_loop<A: Actor>(
-    mut act: A,
-    mut ctx: ActorContext<A>,
-    mut msg_rx: UnboundedReceiver<QueuePayload<A>>,
-) {
-    act.started(&mut ctx).await;
-    while let Some(mut msg) = msg_rx.recv().await {
-        msg.handle(&mut act, &mut ctx).await;
-    }
-    act.stopped(&mut ctx).await;
-}
+
 
 #[async_trait]
 pub trait Handler<T: Send>: Actor {
