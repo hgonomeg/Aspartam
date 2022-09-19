@@ -6,10 +6,18 @@ use futures_util::stream::{Stream, StreamExt};
 
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
+    state: ActorState
 }
 unsafe impl<T: Actor> Send for ActorContext<T> {}
 
 impl<T: Actor> ActorContext<T> {
+    #[inline]
+    pub fn state(&self) -> ActorState {
+        self.state
+    }
+    pub fn stop(&mut self) {
+        self.state = ActorState::Stopping
+    }
     #[inline]
     pub fn address(&self) -> Addr<T> {
         self.address.upgrade().unwrap()
@@ -40,6 +48,12 @@ impl<T: Actor> ActorContext<T> {
         });
     }
     pub(crate) fn new(weakaddr: WeakAddr<T>) -> Self {
-        Self { address: weakaddr }
+        Self { address: weakaddr, state: ActorState::Starting }
+    }
+    pub(crate) fn set_state(&mut self, state: ActorState) {
+        self.state = state;
+    }
+    pub(crate) fn reset_from(&mut self, weakaddr: WeakAddr<T>) {
+        self.address = weakaddr;
     }
 }

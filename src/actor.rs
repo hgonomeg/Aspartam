@@ -7,7 +7,7 @@ use crate::{
 use async_trait::async_trait;
 use std::sync::Arc;
 
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Copy,Debug,Eq,PartialEq)]
 pub enum ActorState {
     Starting,
     Running,
@@ -15,7 +15,7 @@ pub enum ActorState {
     Stopped
 }
 
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Copy,Debug,Eq,PartialEq)]
 pub enum Stopping {
     Continue,
     Stop
