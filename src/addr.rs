@@ -1,5 +1,6 @@
 use crate::{
     actor::{Actor, Handler},
+    error::*,
     message_queue::MessageQueue,
 };
 use std::sync::{Arc, Weak};
@@ -17,13 +18,13 @@ impl<T: Actor> Clone for Addr<T> {
 unsafe impl<T: Actor> Send for Addr<T> {}
 
 impl<T: Actor> Addr<T> {
-    pub async fn send<M>(&self, msg: M) -> <T as Handler<M>>::Response
+    pub async fn send<M>(&self, msg: M) -> Result<<T as Handler<M>>::Response, ActorError>
     where
         M: 'static + Send,
         T: Handler<M>,
     {
-        let resp = self.msg_queue.send(msg);
-        resp.await.unwrap()
+        let resp = self.msg_queue.send(msg)?;
+        Ok(resp.await?)
     }
     pub fn do_send<M>(&self, msg: M)
     where
@@ -31,6 +32,13 @@ impl<T: Actor> Addr<T> {
         T: Handler<M>,
     {
         self.msg_queue.do_send(msg)
+    }
+    pub fn try_send<M>(&self, msg: M) -> Result<(), ActorError>
+    where
+        M: 'static + Send,
+        T: Handler<M>,
+    {
+        self.msg_queue.try_send(msg)
     }
     pub fn downgrade(&self) -> WeakAddr<T> {
         WeakAddr::<T> {
