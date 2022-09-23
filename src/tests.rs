@@ -586,7 +586,7 @@ fn supervised_lifecycle() {
 
     #[async_trait]
     impl Supervised for Dummy {
-        async fn restarting(&mut self, ctx: &mut ActorContext<Dummy>) {
+        async fn restarting(&mut self, _ctx: &mut ActorContext<Dummy>) {
             self.restart_count += 1;
         }
     }
