@@ -105,6 +105,7 @@ pub(crate) async fn supervised_actor_runner_loop<A: Supervised>(
             act = finished_actor.actor;
             ctx = finished_actor.ctx;
             msg_rx = finished_actor.msg_rx;
+            act.restarting(&mut ctx).await;
         }
     }
 }
