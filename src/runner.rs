@@ -22,7 +22,7 @@ struct FinishedActor<A: Actor> {
     actor: A,
     ctx: ActorContext<A>,
     died_from_dropping_last_reference: bool,
-    msg_rx: UnboundedReceiver<QueuePayload<A>>
+    msg_rx: UnboundedReceiver<QueuePayload<A>>,
 }
 
 async fn actor_runner_loop_impl<A: Actor>(
@@ -85,12 +85,12 @@ async fn actor_runner_loop_impl<A: Actor>(
         actor: act,
         ctx,
         died_from_dropping_last_reference,
-        msg_rx
+        msg_rx,
     }
 }
 
 /// Should be very similar to [actor_runner_loop] except that the actor gets restarted when it's Stopped.
-/// 
+///
 /// The actor might actually die when all references to it are dropped.
 pub(crate) async fn supervised_actor_runner_loop<A: Supervised>(
     mut act: A,

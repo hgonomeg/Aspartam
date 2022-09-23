@@ -554,3 +554,55 @@ fn actor_stopping_new_addr_correctness() {
         assert_eq!(new_addr.send(DummyMessage(13)).await.unwrap(), 26);
     })
 }
+
+#[test]
+fn supervised_lifecycle() {
+    struct Kill;
+    struct Dummy {
+        dropped_notifier: Option<oneshot::Sender<u32>>,
+        restart_count: u32,
+    }
+
+    #[async_trait]
+    impl Actor for Dummy {}
+    #[async_trait]
+    impl Handler<Kill> for Dummy {
+        type Response = ();
+
+        async fn handle(&mut self, _item: Kill, ctx: &mut ActorContext<Dummy>) -> Self::Response {
+            ctx.stop();
+        }
+    }
+
+    impl Drop for Dummy {
+        fn drop(&mut self) {
+            self.dropped_notifier
+                .take()
+                .unwrap()
+                .send(self.restart_count)
+                .unwrap();
+        }
+    }
+
+    #[async_trait]
+    impl Supervised for Dummy {
+        async fn restarting(&mut self, ctx: &mut ActorContext<Dummy>) {
+            self.restart_count += 1;
+        }
+    }
+
+    get_runtime().block_on(async {
+        let (tx, rx) = oneshot::channel();
+        let d = Supervisor::start(move |_ctx| Dummy {
+            dropped_notifier: Some(tx),
+            restart_count: 0,
+        });
+        d.send(Kill).await.unwrap();
+        d.send(Kill).await.unwrap();
+        d.send(Kill).await.unwrap();
+        d.send(Kill).await.unwrap();
+
+        drop(d);
+        assert_eq!(rx.await.unwrap(), 4);
+    })
+}
