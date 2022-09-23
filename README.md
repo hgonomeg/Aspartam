@@ -21,6 +21,5 @@ I decided to create something that feels similar to `actix` but requires a lot l
 # TODO
 
 * Documentation
-* Something like `actix`'s `Supervisor`
 * Maybe something like `actix`'s `Recipient`
 * Publish on crates.io
