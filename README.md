@@ -9,7 +9,7 @@ Messages are processed sequentially.
 ## Features
 
 * Asynchronous actors
-* Support for typed messages via generics
+* Support for typed messages via dynamic dispatch
 * Support for asynchronous message handlers
 * Actor supervision
 
