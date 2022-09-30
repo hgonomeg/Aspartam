@@ -6,6 +6,8 @@ Minimalistic actor framework based on tokio, inspired by actix
 
 * Asynchronous actors
 * Support for typed messages via generics
+* Support for asynchronous message handlers
+* Actor supervision
 
 ## Usage
 
