@@ -1,6 +1,10 @@
 # Aspartam
 
-Minimalistic actor framework based on tokio, inspired by actix
+Minimalistic actor framework based on tokio, inspired by actix.
+
+Aspartam tries to keep it simple and easy to use.
+
+Messages are processed sequentially. 
 
 ## Features
 
