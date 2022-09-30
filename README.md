@@ -29,6 +29,4 @@ I decided to create something that feels similar to `actix` but requires a lot l
 
 # TODO
 
-* Documentation
 * Maybe something like `actix`'s `Recipient`
-* Publish on crates.io
