@@ -20,6 +20,7 @@ TODO
 ## Aspartam vs Actix
 
 TODO
+
 ## Why Aspartam
 
 While `actix` is great, it makes using `async`/`await` problematic in message handlers. Workarounds exist but that continues to be a major pain-point. 
@@ -27,6 +28,6 @@ While `actix` is great, it makes using `async`/`await` problematic in message ha
 I decided to create something that feels similar to `actix` but requires a lot less hassle and has less complexity overall.
 
 
-# TODO
+## TODO
 
 * Maybe something like `actix`'s `Recipient`
