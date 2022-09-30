@@ -7,6 +7,9 @@ use crate::{
 };
 use std::sync::{Arc, Weak};
 
+/// Basic actor address type.
+/// 
+/// Internally uses reference counting.
 pub struct Addr<T: Actor> {
     pub(crate) msg_queue: Arc<MessageQueue<T>>,
 }
