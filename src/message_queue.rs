@@ -1,3 +1,5 @@
+//! Internal message queue implementation
+
 use crate::{actor::*, error::*};
 use tokio::sync::{mpsc, oneshot};
 

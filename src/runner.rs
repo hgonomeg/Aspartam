@@ -1,3 +1,5 @@
+//! Internal runtime, including runner loops
+
 use crate::{
     actor::{Actor, ActorState, Stopping},
     addr::Addr,

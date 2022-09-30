@@ -1,3 +1,5 @@
+//! Basic definitions for actors
+
 use crate::{
     addr::*,
     context::ActorContext,

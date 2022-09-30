@@ -15,11 +15,13 @@ pub mod actor;
 pub mod addr;
 pub mod context;
 pub mod error;
+#[doc(hidden)]
 pub mod message_queue;
 mod runner;
 pub mod supervisor;
 
 pub mod prelude {
+    //! Everything you need, re-exported
     pub use crate::{
         actor::{Actor, ActorState, Handler},
         addr::{Addr, WeakAddr},

@@ -1,3 +1,5 @@
+//! Helpers for hiding generics via dynamic dispatch
+
 use super::QueuePayload;
 use crate::{actor::*, context::ActorContext};
 use async_trait::async_trait;

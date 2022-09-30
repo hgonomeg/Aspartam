@@ -1,3 +1,5 @@
+//! Execution context for actors
+
 use crate::{
     actor::{Actor, ActorState, Handler},
     addr::{Addr, WeakAddr},

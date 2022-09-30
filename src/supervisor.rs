@@ -1,3 +1,5 @@
+//! Utilities for creating supervised actors    
+
 use crate::{
     actor::{actor_create_impl, Actor},
     addr::Addr,

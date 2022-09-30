@@ -1,3 +1,5 @@
+//! Stores aspartam's error type
+
 use crate::{actor::Actor, message_queue::QueuePayload};
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError as TokioSendError;

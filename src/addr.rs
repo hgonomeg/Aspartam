@@ -1,3 +1,5 @@
+//! Actor addresses
+
 use crate::{
     actor::{Actor, Handler},
     error::*,
