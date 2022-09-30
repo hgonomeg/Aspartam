@@ -5,10 +5,14 @@ use crate::{actor::*, context::ActorContext};
 use async_trait::async_trait;
 use tokio::sync::oneshot;
 
+/// A helper trait to hide generic message type behind a layer of dynamic dispatch
 #[async_trait]
 pub(crate) trait EnvelopeProxy<A: Actor> {
+    /// Type-agnostic message handler for the envelope container, responsible for calling type-specific message handler
     async fn handle(&mut self, act: &mut A, ctx: &mut ActorContext<A>);
 }
+
+/// The generic envelope structure, used for wrapping queueed messages and their response-senders
 pub(crate) struct Envelope<M: Send, R: Send> {
     item: Option<M>,
     tx: Option<oneshot::Sender<R>>,
@@ -46,12 +50,14 @@ impl<M: 'static + Send, R: 'static + Send> Envelope<M, R> {
             tx: Some(tx),
         }
     }
+    /// Used when the message response won't be handled
     pub fn new_no_sender(item: M) -> Self {
         Self {
             item: Some(item),
             tx: None,
         }
     }
+    /// Wraps the message in a trait-object, abstracting away its' type
     pub fn pack<A>(self) -> QueuePayload<A>
     where
         A: Actor,
