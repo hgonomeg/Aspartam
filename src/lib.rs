@@ -8,7 +8,7 @@
 //!
 //! * Asynchronous actors
 //! * Support for typed messages via dynamic dispatch
-//! * Support for asynchronous message handlers
+//! * Support for asynchronous message handlers, via async-trait
 //! * Actor supervision
 
 pub mod actor;
