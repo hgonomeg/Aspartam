@@ -1,3 +1,16 @@
+//! Minimalistic actor framework based on tokio, inspired by actix.
+//! 
+//! Aspartam tries to keep it simple and easy to use.
+//! 
+//! Messages are processed sequentially. 
+//! 
+//! ## Features
+//!
+//! * Asynchronous actors
+//! * Support for typed messages via generics
+//! * Support for asynchronous message handlers
+//! * Actor supervision
+
 pub mod actor;
 pub mod addr;
 pub mod context;
