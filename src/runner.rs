@@ -5,7 +5,7 @@ use crate::{
     addr::Addr,
     context::ActorContext,
     message_queue::{MessageQueue, QueuePayload},
-    supervisor::Supervised,
+    supervised::Supervised,
 };
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;

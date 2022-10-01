@@ -593,7 +593,7 @@ fn supervised_lifecycle() {
 
     get_runtime().block_on(async {
         let (tx, rx) = oneshot::channel();
-        let d = Supervisor::start(move |_ctx| Dummy {
+        let d = Dummy::create_supervised(move |_ctx| Dummy {
             dropped_notifier: Some(tx),
             restart_count: 0,
         });
