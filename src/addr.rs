@@ -12,6 +12,7 @@ use std::sync::{Arc, Weak};
 /// Addresses are the objects through which you can interact with actors
 /// 
 /// Internally uses reference counting
+#[derive(Debug)]
 pub struct Addr<T: Actor> {
     pub(crate) msg_queue: Arc<MessageQueue<T>>,
 }
@@ -73,6 +74,7 @@ impl<T: Actor> Addr<T> {
 /// 
 /// Much like with [Arc] and [Weak], the weak address does not 
 /// necessarily refer to an actor that still exists in the memory.
+#[derive(Debug)]
 pub struct WeakAddr<T: Actor> {
     msg_queue: Weak<MessageQueue<T>>,
 }

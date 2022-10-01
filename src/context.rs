@@ -9,6 +9,7 @@ use futures_util::stream::{Stream, StreamExt};
 /// 
 /// It allows an actor to manage its' lifecycle, 
 /// retrieve its' address and enqueue messages for later processing.
+#[derive(Debug)]
 pub struct ActorContext<T: Actor> {
     address: WeakAddr<T>,
     state: ActorState,

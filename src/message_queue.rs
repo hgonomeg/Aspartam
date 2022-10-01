@@ -10,6 +10,7 @@ use envelope::*;
 pub(crate) type QueuePayload<T> = Box<dyn EnvelopeProxy<T> + Send>;
 
 /// Message queue wraps a sender for [QueuePayload]
+#[derive(Debug)]
 pub(crate) struct MessageQueue<T: Actor> {
     tx: mpsc::UnboundedSender<QueuePayload<T>>,
 }
