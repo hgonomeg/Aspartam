@@ -6,8 +6,10 @@ use tokio::sync::{mpsc, oneshot};
 mod envelope;
 use envelope::*;
 
+/// The type used for wrapping enqueued messages
 pub(crate) type QueuePayload<T> = Box<dyn EnvelopeProxy<T> + Send>;
 
+/// Message queue wraps a sender for [QueuePayload]
 pub(crate) struct MessageQueue<T: Actor> {
     tx: mpsc::UnboundedSender<QueuePayload<T>>,
 }
@@ -21,6 +23,7 @@ impl<T: Actor> Clone for MessageQueue<T> {
 }
 
 impl<T: Actor> MessageQueue<T> {
+    /// New message queue with its' corresponding receiver
     pub fn new() -> (Self, mpsc::UnboundedReceiver<QueuePayload<T>>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (Self { tx }, rx)
