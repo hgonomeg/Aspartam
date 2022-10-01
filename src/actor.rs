@@ -82,11 +82,11 @@ pub trait Actor: 'static + Sized + Send {
     async fn stopped(&mut self, _ctx: &mut ActorContext<Self>) {}
 }
 
-/// Trait used to specify how an actor handles a given message type
+/// Trait implemented on [Actor]s to enable them to process messages of a given type
 #[async_trait]
 pub trait Handler<T: Send>: Actor {
-    /// Associated type expressing response type for a given type of incoming message
+    /// Type used to respond to incoming messages
     type Response: Send + 'static;
-    /// The method used to handle messages of a given type
+    /// The method used to handle incoming messages
     async fn handle(&mut self, msg: T, ctx: &mut ActorContext<Self>) -> Self::Response;
 }
