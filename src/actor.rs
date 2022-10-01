@@ -52,7 +52,7 @@ pub(crate) fn actor_create_impl<A: Actor, F: FnOnce(&mut ActorContext<A>) -> A +
 /// The actor trait
 #[async_trait]
 pub trait Actor: 'static + Sized + Send {
-    /// Starts the actor, consuming the structure and returning an address to the actor.
+    /// Starts the actor, consuming the underlying structure and returning an address to it.
     fn start(self) -> Addr<Self> {
         let (msg_queue, msg_rx) = MessageQueue::new();
         let ret = Addr::<Self> {
