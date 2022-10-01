@@ -2,8 +2,14 @@
 name = "aspartam"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+authors  = [ "Jakub Smulski <hgonomeg@gmail.com>" ]
+description = "Minimalistic actor framework based on tokio, inspired by actix"
+repository = "https://github.com/hgonomeg/aspartam"
+documnetation = "https://docs.rs/aspartam"
+#keywords
+#categories
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 tokio = { version = "1", features = ["sync","rt"] }
