@@ -6,10 +6,13 @@ use tokio::sync::mpsc::error::SendError as TokioSendError;
 use tokio::sync::oneshot::error::RecvError as TokioRecvError;
 
 #[derive(Error, Debug, PartialEq, Eq)]
+/// The error type used by actor interactions
 pub enum ActorError {
     #[error("Failed to enqueue new message for actor. Actor has most likely stopped.")]
+    /// Failed to enqueue new message for actor. Actor has most likely stopped.
     CannotSend,
     #[error("The actor has most likely stopped before the message could be handled.")]
+    /// The actor has most likely stopped before the message could be handled.
     MessageLost,
 }
 
