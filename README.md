@@ -32,3 +32,4 @@ I decided to create something that feels similar to `actix` but requires a lot l
 
 * Maybe something like `actix`'s `Recipient`
 * Consider something like `ctx.after_future(fut,closure(actor,fut::Output,ctx))` or `ctx.spawn` to mimic actix's `ActorFuture`
+* Add API to allow running a future after stream ends
